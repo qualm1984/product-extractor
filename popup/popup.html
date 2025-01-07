@@ -7,8 +7,12 @@
 <body>
   <div class="container">
     <h2>Product Grid Extractor</h2>
-    <button id="extractBtn">Extract Products</button>
-    <button id="exportCsvBtn" style="display: none;">Export CSV</button>
+    <div class="button-group">
+      <button id="extractBtn">Extract Products</button>
+      <button id="exportCsvBtn" style="display: none;">Export CSV</button>
+      <button id="captureToggle">Start Capturing</button>
+    </div>
+    <div id="captureStatus"></div>
     <div id="results"></div>
   </div>
   <script src="popup.js"></script>

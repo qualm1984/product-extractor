@@ -1,3 +1,17 @@
+document.addEventListener('DOMContentLoaded', () => {
+  const captureButton = document.getElementById('captureToggle');
+  captureButton.textContent = 'Start Capturing';
+  captureButton.setAttribute('data-capturing', 'false');
+  
+  // Reset capture state when popup opens
+  chrome.storage.local.set({
+    popupState: {
+      isCapturing: false,
+      captureCount: 0
+    }
+  });
+});
+
 function convertToCSV(data) {
   // Define CSV headers based on all possible fields
   const headers = [
@@ -54,6 +68,26 @@ function downloadCSV(csvContent, filename) {
 }
 
 let extractedData = null; // Store the extracted data
+let isCapturing = false;
+let popupWindow = null;
+
+function createDetachedPopup() {
+  const width = 400;
+  const height = 300;
+  const left = window.screenX + window.outerWidth - width;
+  const top = window.screenY;
+
+  chrome.windows.create({
+    url: chrome.runtime.getURL('popup/popup.html'),
+    type: 'popup',
+    width: width,
+    height: height,
+    left: left,
+    top: top
+  }, (window) => {
+    popupWindow = window;
+  });
+}
 
 document.getElementById('extractBtn').addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -104,6 +138,77 @@ document.getElementById('exportCsvBtn').addEventListener('click', () => {
   }
 });
 
+document.getElementById('captureToggle').addEventListener('click', function() {
+  isCapturing = !isCapturing;
+  
+  if (isCapturing) {
+    // Save current popup state
+    const currentState = {
+      isCapturing: true,
+      captureCount: 0
+    };
+    chrome.storage.local.set({ popupState: currentState }, () => {
+      // Create detached window and close current popup
+      createDetachedPopup();
+      window.close();
+    });
+  }
+  
+  chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+    chrome.tabs.sendMessage(tabs[0].id, {
+      action: 'toggleCapture',
+      enable: isCapturing
+    }, response => {
+      const button = document.getElementById('captureToggle');
+      button.textContent = isCapturing ? 'Stop Capturing' : 'Start Capturing';
+      button.setAttribute('data-capturing', isCapturing);
+      updateCaptureStatus(response);
+    });
+  });
+});
+
+// Check if we're in a detached window
+chrome.storage.local.get('popupState', (data) => {
+  if (data.popupState?.isCapturing) {
+    isCapturing = true;
+    const button = document.getElementById('captureToggle');
+    button.textContent = 'Stop Capturing';
+    button.setAttribute('data-capturing', 'true');
+    updateCaptureStatus({
+      status: 'capturing',
+      captureCount: data.popupState.captureCount || 0
+    });
+  }
+});
+
+function updateCaptureStatus(response) {
+  const statusElement = document.getElementById('captureStatus');
+  statusElement.textContent = `Capture Status: ${response.status} (${response.captureCount} requests captured)`;
+  
+  if (isCapturing) {
+    chrome.storage.local.set({
+      popupState: {
+        isCapturing: true,
+        captureCount: response.captureCount
+      }
+    });
+  }
+  
+  statusElement.classList.remove('updated');
+  void statusElement.offsetWidth;
+  statusElement.classList.add('updated');
+}
+
+// Add listener for network captures
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'networkCapture') {
+    updateCaptureStatus({
+      status: 'capturing',
+      captureCount: message.data.length
+    });
+  }
+});
+
 function displayResults(data) {
   if (!data || !data.products || !data.vendors) {
     throw new Error('Invalid data structure received');
@@ -124,4 +229,27 @@ function displayError(error) {
       ${error.message || 'Please navigate to a Google Shopping page and try again'}
     </div>
   `;
-} 
+}
+
+// Prevent popup from closing on clicks
+document.addEventListener('click', (e) => {
+  if (isCapturing) {
+    e.stopPropagation();
+  }
+});
+
+// Add this function to handle capture updates
+function handleCaptureUpdate(data) {
+  const statusElement = document.getElementById('captureStatus');
+  statusElement.textContent = `Capture Status: capturing (${data.captureCount} requests captured)`;
+  statusElement.classList.remove('updated');
+  void statusElement.offsetWidth;
+  statusElement.classList.add('updated');
+}
+
+// Add this to your existing message listener
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'updateCapture') {
+    handleCaptureUpdate(message.data);
+  }
+}); 

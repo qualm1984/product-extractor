@@ -2,11 +2,8 @@ class ProductGridExtractor {
   constructor() {
     this.extractedData = {
       products: [],
-      vendors: new Set(),
-      networkCaptures: []
+      vendors: new Set()
     };
-    this.isCapturingClicks = false;
-    this.setupNetworkCapture();
   }
 
   findProductElements() {
@@ -37,6 +34,23 @@ class ProductGridExtractor {
 
     const texts = textElements.map(el => el.textContent.trim())
       .filter(text => text.length > 0);
+
+    // Helper function to categorize text by pattern
+    const categorizeText = (text) => {
+      // Price pattern: Starts with currency symbol followed by numbers
+      if (/^[£$€]\d+(\.\d{2})?/.test(text)) return 'price';
+      
+      // Rating pattern: Single digit followed by dot and single digit
+      if (/^\d\.\d$/.test(text)) return 'rating';
+      
+      // Rating count pattern: Numbers in parentheses
+      if (/^\(\d+\)$/.test(text)) return 'ratingCount';
+      
+      // Delivery pattern: Contains delivery-related words
+      if (/\b(delivery|free|by|collection)\b/i.test(text)) return 'delivery';
+      
+      return 'other';
+    };
 
     // Process text groups based on their position and structure
     const processTextGroups = (groups) => {
@@ -160,6 +174,8 @@ class ProductGridExtractor {
       textGroups.push(currentGroup);
     }
 
+    console.log('Text groups:', textGroups);
+
     // Find image
     const imageElement = productElement.querySelector('img');
 
@@ -208,207 +224,42 @@ class ProductGridExtractor {
       const uniqueVendors = Array.from(this.extractedData.vendors);
       console.log('Unique vendors found:', uniqueVendors);
 
+      if (!this.extractedData.products) this.extractedData.products = [];
+
       return {
-        success: true,
-        data: {
-          products: this.extractedData.products,
-          vendors: uniqueVendors,
-          vendorCount: uniqueVendors.length
-        }
+        products: this.extractedData.products,
+        vendors: uniqueVendors,
+        vendorCount: uniqueVendors.length
       };
     } catch (error) {
       console.error('Extraction error:', error);
       return {
-        success: false,
-        error: error.message
+        products: [],
+        vendors: [],
+        vendorCount: 0
       };
     }
-  }
-
-  setupNetworkCapture() {
-    try {
-      // Create a wrapper for XMLHttpRequest
-      const self = this;
-      const XHR = XMLHttpRequest.prototype;
-      const open = XHR.open;
-      const send = XHR.send;
-
-      XHR.open = function(method, url) {
-        this._url = url;
-        this._method = method;
-        this._isProductRequest = typeof url === 'string' && url.includes('async/oapv');
-        if (this._isProductRequest) {
-          console.log('Intercepted product request:', url);
-        }
-        return open.apply(this, arguments);
-      };
-
-      XHR.send = function() {
-        if (this._isProductRequest) {
-          console.log('Sending product request, capturing:', self.isCapturingClicks);
-          this.addEventListener('load', function() {
-            try {
-              if (!self.isCapturingClicks) return;
-              
-              const response = JSON.parse(this.responseText);
-              const capture = {
-                url: this._url,
-                method: this._method,
-                response,
-                timestamp: new Date().toISOString()
-              };
-              
-              self.extractedData.networkCaptures.push(capture);
-              
-              // Notify popup about the capture
-              chrome.runtime.sendMessage({
-                action: 'updateCapture',
-                data: {
-                  captureCount: self.extractedData.networkCaptures.length,
-                  capture
-                }
-              }).catch(error => {
-                console.log('Message send error (this is normal if popup is closed):', error);
-              });
-              
-              console.log('Successfully captured request:', {
-                url: this._url,
-                captureCount: self.extractedData.networkCaptures.length
-              });
-            } catch (error) {
-              console.error('Failed to capture response:', error);
-            }
-          });
-        }
-        return send.apply(this, arguments);
-      };
-
-      // Add click listener for products
-      document.addEventListener('click', (e) => {
-        if (this.isProductTitleDiv(e.target)) {
-          console.log('Product clicked:', {
-            text: e.target.textContent.trim(),
-            isCapturing: this.isCapturingClicks
-          });
-        }
-      });
-
-      console.log('Network capture setup completed');
-    } catch (error) {
-      console.error('Failed to setup network capture:', error);
-    }
-  }
-
-  toggleCapture(enable) {
-    try {
-      this.isCapturingClicks = enable;
-      console.log('Capture toggled:', {
-        enable,
-        isCapturing: this.isCapturingClicks,
-        captureCount: this.extractedData.networkCaptures.length
-      });
-
-      chrome.storage.local.set({
-        popupState: {
-          isCapturing: enable,
-          captureCount: this.extractedData.networkCaptures.length
-        }
-      }).catch(error => {
-        console.error('Failed to save capture state:', error);
-      });
-      
-      return {
-        success: true,
-        status: enable ? 'capturing' : 'stopped',
-        captureCount: this.extractedData.networkCaptures.length
-      };
-    } catch (error) {
-      console.error('Toggle capture error:', error);
-      return {
-        success: false,
-        status: 'error',
-        error: error.message
-      };
-    }
-  }
-
-  getCaptures() {
-    return this.extractedData.networkCaptures;
-  }
-
-  isProductTitleDiv(element) {
-    if (!element || element.tagName !== 'DIV') return false;
-    if (element.offsetParent === null) return false;
-    if (element.children.length > 0) return false;
-    
-    let parent = element.parentElement;
-    while (parent) {
-      if (parent.tagName === 'LI') {
-        const ul = parent.parentElement;
-        if (ul?.tagName === 'UL') {
-          const group = ul.closest('product-viewer-group');
-          return !!group;
-        }
-      }
-      parent = parent.parentElement;
-    }
-    return false;
   }
 }
 
-// Initialize the extractor
-if (!window.productGridExtractor) {
-  console.log('Creating new ProductGridExtractor instance');
-  window.productGridExtractor = new ProductGridExtractor();
-}
+window.productGridExtractor = window.productGridExtractor || null;
 
-// Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('Received message:', request);
-  
-  try {
+  if (request.action === 'extract') {
     if (!window.productGridExtractor) {
-      console.log('Creating new ProductGridExtractor instance');
       window.productGridExtractor = new ProductGridExtractor();
     }
-
-    switch (request.action) {
-      case 'extract':
-        window.productGridExtractor.extract()
-          .then(result => {
-            console.log('Extract result:', result);
-            sendResponse(result);
-          })
-          .catch(error => {
-            console.error('Extract error:', error);
-            sendResponse({
-              success: false,
-              error: error.message
-            });
-          });
-        return true; // Keep channel open for async response
-
-      case 'toggleCapture':
-        const result = window.productGridExtractor.toggleCapture(request.enable);
-        console.log('Toggle capture result:', result);
-        sendResponse(result);
-        break;
-      
-      case 'getCaptures':
-        const captures = window.productGridExtractor.getCaptures();
-        console.log('Get captures result:', captures.length);
-        sendResponse({
-          success: true,
-          captures: captures
-        });
-        break;
-    }
-  } catch (error) {
-    console.error('Message handler error:', error);
-    sendResponse({
-      success: false,
-      error: error.message
-    });
+    
+    window.productGridExtractor.extract()
+      .then(data => {
+        console.log('Extracted data:', data);
+        sendResponse({ success: true, data: data });
+      })
+      .catch(error => {
+        console.error('Extraction error:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true;
   }
   return true;
 });
