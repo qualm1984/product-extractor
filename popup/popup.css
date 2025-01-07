@@ -1,0 +1,39 @@
+.container {
+  width: 400px;
+  padding: 16px;
+}
+
+button {
+  margin: 8px 0;
+  padding: 8px 16px;
+  background-color: #4285f4;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#exportCsvBtn {
+  background-color: #34a853;
+  margin-left: 8px;
+}
+
+#exportCsvBtn:hover {
+  background-color: #2d8745;
+}
+
+button:hover {
+  background-color: #3367d6;
+}
+
+.error {
+  color: red;
+  margin-top: 8px;
+}
+
+pre {
+  background-color: #f5f5f5;
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+} 

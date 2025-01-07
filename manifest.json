@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Product Grid Extractor",
+  "version": "1.0",
+  "description": "Extract product information from Google Shopping results",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://*.google.com/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html"
+  },
+  "content_scripts": [{
+    "matches": ["*://*.google.com/*"],
+    "js": ["content_scripts/extractor.js"],
+    "css": ["content_scripts/styles.css"]
+  }],
+  "background": {
+    "service_worker": "background/worker.js"
+  }
+} 
