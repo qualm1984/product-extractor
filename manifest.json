@@ -11,10 +11,11 @@
     "*://*.google.com/*"
   ],
   "action": {},
-  "content_scripts": [
-    {
-      "matches": ["*://*.google.com/*"],
-      "js": ["content_scripts/extractor.js"]
-    }
-  ]
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [{
+    "resources": ["content_scripts/extractor.js"],
+    "matches": ["<all_urls>"]
+  }]
 } 

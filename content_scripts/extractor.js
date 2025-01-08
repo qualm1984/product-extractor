@@ -3,14 +3,15 @@ class CaptureUI {
     this.panel = document.createElement('div');
     this.panel.style.cssText = `
       position: fixed;
-      top: 10px;
-      right: 10px;
+      right: 20px;
+      top: 20px;
+      width: 300px;
       background: white;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      padding: 15px;
+      border: 1px solid #dadce0;
+      border-radius: 8px;
+      padding: 16px;
       z-index: 10000;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
       font-family: Arial, sans-serif;
       min-width: 250px;
     `;
@@ -96,9 +97,44 @@ class CaptureUI {
     this.captureBtn.onmouseover = () => this.captureBtn.style.background = '#3cb85d';
     this.captureBtn.onmouseout = () => this.captureBtn.style.background = '#34a853';
 
-    // Make panel draggable
-    this.panel.style.cursor = 'move';
-    this.makeDraggable(this.panel);
+    // Dragging functionality
+    let isDragging = false;
+    let currentX;
+    let currentY;
+    let initialX;
+    let initialY;
+    let xOffset = 0;
+    let yOffset = 0;
+
+    const dragStart = (e) => {
+      initialX = e.clientX - xOffset;
+      initialY = e.clientY - yOffset;
+
+      if (e.target === this.panel) {
+        isDragging = true;
+      }
+    };
+
+    const dragEnd = () => {
+      isDragging = false;
+    };
+
+    const drag = (e) => {
+      if (isDragging) {
+        e.preventDefault();
+        currentX = e.clientX - initialX;
+        currentY = e.clientY - initialY;
+
+        xOffset = currentX;
+        yOffset = currentY;
+
+        this.panel.style.transform = `translate(${currentX}px, ${currentY}px)`;
+      }
+    };
+
+    this.panel.addEventListener('mousedown', dragStart);
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('mouseup', dragEnd);
 
     // Add minimize button
     this.minimizeBtn = document.createElement('button');
@@ -122,6 +158,9 @@ class CaptureUI {
     this.panel.appendChild(this.exportBtn);
     this.panel.appendChild(this.status);
     this.panel.appendChild(this.resultsContainer);
+
+    // Start hidden
+    this.panel.style.display = 'none';
     document.body.appendChild(this.panel);
 
     // Event handlers with visual feedback
@@ -148,7 +187,7 @@ class CaptureUI {
       this.extractBtn.style.display = isMinimized ? 'none' : 'inline-block';
       this.captureBtn.style.display = isMinimized ? 'none' : 'inline-block';
       this.minimizeBtn.textContent = isMinimized ? '+' : '-';
-      this.panel.style.padding = isMinimized ? '5px' : '15px';
+      this.panel.style.padding = isMinimized ? '5px' : '16px';
     });
 
     // Export button handler
@@ -257,6 +296,91 @@ class CaptureUI {
     this.productsSection.innerHTML = productsHtml;
     this.vendorsSection.innerHTML = vendorsHtml;
     this.resultsContainer.style.display = 'block';
+
+    // Add CSV export functionality
+    const exportCSV = () => {
+      const headers = [
+        'Title',
+        'Price',
+        'Rating',
+        'Review Count',
+        'Vendor',
+        'Delivery',
+        'Discount',
+        'Original Price'
+      ];
+      
+      const rows = data.products.map(product => {
+        // Clean price values
+        const cleanPrice = product.price ? product.price.replace(/[£$€,]/g, '') : '';
+        const cleanOriginalPrice = product.originalPrice ? product.originalPrice.replace(/[£$€,]/g, '') : '';
+        
+        // Extract rating and review count, handling different formats
+        let rating = '';
+        let reviewCount = '';
+        if (product.rating) {
+          // Match patterns like "4.8 (4.6K)" or "4.8 ((4.6K))"
+          const ratingMatch = product.rating.match(/(\d\.\d)\s*\(+([^)]+)\)+/);
+          if (ratingMatch) {
+            rating = ratingMatch[1];
+            reviewCount = ratingMatch[2].replace(/[()]/g, ''); // Remove any remaining brackets
+          } else {
+            rating = product.rating;
+          }
+        }
+
+        // Ensure delivery is properly captured
+        const delivery = product.delivery && product.delivery !== '-' ? product.delivery : '';
+
+        // Handle discount information
+        const discount = product.discount || '';
+        
+        return [
+          product.title || '',
+          cleanPrice,
+          rating,
+          reviewCount,
+          product.vendor || '',
+          delivery,
+          discount,
+          cleanOriginalPrice
+        ];
+      });
+
+      // Combine headers and rows
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => {
+          // If cell contains commas, quotes, or newlines, wrap in quotes
+          if (/[",\n]/.test(cell)) {
+            return `"${cell.replace(/"/g, '""')}"`;
+          }
+          return cell;
+        }).join(','))
+      ].join('\n');
+
+      // Create and trigger download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'products.csv';
+      link.click();
+    };
+
+    // Add export button to UI
+    const exportButton = document.createElement('button');
+    exportButton.textContent = 'Export CSV';
+    exportButton.style.cssText = `
+      background: #1a73e8;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      margin-top: 8px;
+      cursor: pointer;
+    `;
+    exportButton.addEventListener('click', exportCSV);
+    this.resultsContainer.appendChild(exportButton);
   }
 
   exportProductsToCSV() {
@@ -296,6 +420,14 @@ class CaptureUI {
   onExtractClick(callback) {
     this.extractBtn.addEventListener('click', callback);
   }
+
+  show() {
+    this.panel.style.display = 'block';
+  }
+
+  hide() {
+    this.panel.style.display = 'none';
+  }
 }
 
 class ProductGridExtractor {
@@ -307,17 +439,36 @@ class ProductGridExtractor {
     };
     this.isCapturingClicks = false;
     this.setupXHRInterceptor();
-    this.ui = new CaptureUI((enable) => {
-      this.toggleCapture(enable);
-    });
-    
-    // Setup extract button
-    this.ui.onExtractClick(() => {
-      this.extract().then(result => {
-        console.log('Extraction complete:', result);
-        this.ui.updateExtractStatus(result);
+    this.ui = null;
+    this.isVisible = false;
+    this.initialized = false;
+  }
+
+  toggleUI() {
+    if (!this.initialized) {
+      this.ui = new CaptureUI((enable) => {
+        this.toggleCapture(enable);
       });
-    });
+      
+      this.ui.onExtractClick(() => {
+        this.extract().then(result => {
+          console.log('Extraction complete:', result);
+          this.ui.updateExtractStatus(result);
+        });
+      });
+      
+      this.initialized = true;
+      this.isVisible = true;
+      this.ui.show();
+      return;
+    }
+
+    this.isVisible = !this.isVisible;
+    if (this.isVisible) {
+      this.ui.show();
+    } else {
+      this.ui.hide();
+    }
   }
 
   findProductElements() {
@@ -388,13 +539,17 @@ class ProductGridExtractor {
       // Handle prices and discount
       let originalPrice = '';
       let price = '';
-      
+      let rating = '';
+      let ratingCount = '';
+      let vendor = '';
+      let delivery = '';
+
       if (hasDiscount) {
         if (groups[1] && groups[1][0]) {
-          price = groups[1][0];  // Discounted price
+          price = groups[1][0];
         }
         if (groups[2] && groups[2][0]) {
-          originalPrice = groups[2][0];  // Original price
+          originalPrice = groups[2][0];
         }
       } else {
         if (dataGroup && dataGroup[0]) {
@@ -402,41 +557,38 @@ class ProductGridExtractor {
         }
       }
 
-      // Get rating and review count
-      let rating = '';
-      let ratingCount = '';
-      let vendor = '';
-      let delivery = '';
+      // Process each group to find delivery information
+      for (const group of groups) {
+        const deliveryText = group.find(t => deliveryPattern.test(t));
+        if (deliveryText) {
+          delivery = deliveryText;
+          break;
+        }
+      }
 
+      // Process rating and vendor
       if (dataGroup) {
         const groupArray = dataGroup;
         
-        // First try to find rating at the expected position
         const possibleRating = groupArray[groupArray.length - 2];
         if (possibleRating && /^\d\.\d/.test(possibleRating)) {
           rating = possibleRating;
           ratingCount = groupArray[groupArray.length - 1];
           
-          // If we have a rating, vendor is likely in position 1 or 2
           if (groupArray[1] === '& more prices' || groupArray[1] === 'Refurbished') {
             vendor = groupArray[2];
           } else {
             vendor = groupArray[1];
           }
         } else {
-          // No rating found, look for vendor and delivery differently
-          // Check each item in the group for delivery pattern
           const deliveryIndex = groupArray.findIndex(text => 
             /\b(delivery|free|by|collection)\b/i.test(text));
           
           if (deliveryIndex !== -1) {
-            delivery = groupArray[deliveryIndex];
-            // If delivery found, vendor might be before it
             if (deliveryIndex > 0) {
               vendor = groupArray[deliveryIndex - 1];
             }
           } else {
-            // If no delivery found in this group, vendor might be the last non-price item
             const lastItem = groupArray[groupArray.length - 1];
             if (lastItem && !lastItem.match(/^[£$€]\d+/) && !lastItem.includes('& more')) {
               vendor = lastItem;
@@ -451,23 +603,22 @@ class ProductGridExtractor {
         vendor.includes('and more') ||
         vendor.startsWith('£') ||
         vendor === 'Refurbished' ||
-        /^\d\.\d/.test(vendor) ||  // Don't use rating as vendor
-        /^\(\d+\)$/.test(vendor)   // Don't use rating count as vendor
+        /^\d\.\d/.test(vendor) ||
+        /^\(\d+\)$/.test(vendor)
       )) {
         vendor = '';
       }
 
       return {
         title,
-        price,
-        rating,
-        ratingCount,
+        price: price ? price.replace(/,/g, '') : '',
+        rating: rating ? `${rating} (${ratingCount})` : '',
         vendor,
         delivery,
         hasDiscount,
         ...(hasDiscount && {
           discount,
-          originalPrice
+          originalPrice: originalPrice ? originalPrice.replace(/,/g, '') : ''
         })
       };
     };
@@ -604,38 +755,6 @@ class ProductGridExtractor {
   }
 }
 
-// Initialize the extractor
-if (!window.productGridExtractor) {
-  window.productGridExtractor = new ProductGridExtractor();
-  console.log('Product Grid Extractor initialized');
-}
-
-// Message handler
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (!window.productGridExtractor) {
-    window.productGridExtractor = new ProductGridExtractor();
-  }
-
-  switch (request.action) {
-    case 'extract':
-      window.productGridExtractor.extract()
-        .then(result => {
-          console.log('Extract result:', result);
-          sendResponse(result);
-        })
-        .catch(error => {
-          console.error('Extract error:', error);
-          sendResponse({ success: false, error: error.message });
-        });
-      return true;
-
-    case 'toggleCapture':
-      const result = window.productGridExtractor.toggleCapture(request.enable);
-      console.log('Toggle capture result:', result);
-      sendResponse(result);
-      break;
-  }
-  return true;
-});
-
+// Create global instance when script loads
+window.productGridExtractor = new ProductGridExtractor();
 console.log('Product Grid Extractor content script loaded'); 
